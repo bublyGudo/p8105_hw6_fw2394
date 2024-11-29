@@ -247,3 +247,160 @@ homicide_cities |>
   theme(axis.text.x = element_text(angle = 90, hjust = 1))  
 ```
 *The plot provides a comparison of the odds ratios for different cities, allowing us to see which cities have a higher or lower likelihood of experiencing the event compared to the baseline. Cities like New York, NY and Long Beach, CA have odds ratios less than 1, which suggests that solving homicides is less likely in these cities compared to the reference group. However, cities like Fresno, CA and Minneapolis, MN have odds ratios greater than 1, meaning that the event is less likely in these cities compared to the reference group.*
+
+# Problem 3
+
+## load and clean data
+```{r}
+birthweight = read.csv("data/birthweight.csv") |> 
+  mutate(
+    babysex = case_when(
+      babysex == 1 ~ "male",     
+      babysex == 2 ~ "female",    
+      TRUE ~ NA_character_        
+    ),
+    frace = case_when(     
+      frace == 1 ~ "White",
+      frace == 2 ~ "Black",
+      frace == 3 ~ "Asian",
+      frace == 4 ~ "Puerto Rican",
+      frace == 8 ~ "Other",
+      frace == 9 ~ "Unknown",
+      TRUE ~ NA_character_
+    ),
+    mrace = case_when(   
+      mrace == 1 ~ "White", 
+      mrace == 2 ~ "Black", 
+      mrace == 3 ~ "Asian", 
+      mrace == 4 ~ "Puerto Rican",
+      mrace == 8 ~ "Other",
+      TRUE ~ NA_character_
+    )
+  ) |> 
+  mutate(babysex = as.factor(babysex), 
+         frace =as.factor(frace),
+         mrace = as.factor(mrace))
+```
+*The dataset contains 4342 observations and 20 variables.*
+
+## check missing data
+```{r}
+colSums(is.na(birthweight))
+```
+*There are no missing values in the dataset.*
+
+## run a regression model by including all direct and indirect factors
+```{r}
+# Basic regression model
+birthweight_model_1 = lm(bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + malform + 
+                          menarche + mheight + momage + mrace + parity + pnumlbw + pnumsga + 
+                          ppbmi + ppwt + smoken + wtgain, data = birthweight)
+
+# Check summary of the model
+summary(birthweight_model_1) |> 
+  broom::tidy()
+```
+*The coefficients represent the estimated effects of each predictor variable on the response variable (bwt or birthweight). The intercept is the estimated birthweight when all predictor variables are set to zero. babysexmale is -28.6 which means male babies are expected to weigh 28.68 grams less than female babies, holding all other variables constant. The p-value is 0.000708, indicating this difference is statistically significant at the 0.001 level (highly significant). The coefficient for head circumference (bhead) 130.80 means that for every 1 cm increase in head circumference, the birthweight is expected to increase by 130.80 grams, holding other variables constant. The p-value is very small (p < 2e-16), indicating strong statistical significance. The coefficient for birth length (blength) 74.91 means that for every 1 cm increase in birth length, birthweight is expected to increase by 74.91 grams. This is also statistically significant with a very small p-value (p < 2e-16). The coefficient for mother's weight at delivery (delwt) 4.10 means that for each pound increase in maternal weight, the baby's birthweight increases by 4.10 grams, and this is statistically significant (p < 2e-16). The coefficient for gestational age in weeks (gaweeks) 11.57 means that for every additional week of gestational age, birthweight is expected to increase by 11.57 grams. This is statistically significant with a very small p-value (p < 2e-16). The value of -4.83 means that for every additional cigarette smoked per day, birthweight decreases by 4.83 grams, and this is statistically significant with a very small p-value (p < 2e-16). However, variables like fincome, malform, menarche, mheight, momage, and mrace do not appear to have a significant impact on birthweight in this model.*
+
+## add predictions and residuals
+```{r}
+birthweight_1 = birthweight |> 
+  add_predictions(birthweight_model_1) |> 
+  add_residuals(birthweight_model_1)
+```
+
+
+## plot residuals vs fitted values
+```{r}
+ggplot(birthweight_1, aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "loess", color = "blue", se = FALSE) +
+  labs(x = "Fitted values", y = "Residuals", title = "Residuals vs Fitted Values")
+```
+*The plot shows a curved pattern in the residuals (the blue line is curved). This suggests non-linearity in the relationship between the predictors and the outcome (birthweight). Therefore, this model may not be fully capturing the underlying patterns in the data.*
+
+## run regression using main predictors
+```{r}
+birthweight_model_2 = lm(bwt ~ blength + gaweeks, data = birthweight)
+summary(birthweight_model_2)|> 
+  broom::tidy()
+```
+
+```{r}
+birthweight_2 = birthweight |> 
+  add_predictions(birthweight_model_2) |>
+  add_residuals(birthweight_model_2)
+
+ggplot(birthweight_2, aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "loess", color = "blue", se = FALSE) +
+  labs(x = "Fitted values", y = "Residuals", title = "Residuals vs Fitted Values")
+```
+
+```{r}
+birthweight_model_3 = lm(bwt ~ bhead * blength * babysex, data = birthweight)
+# more explicit way: model_interactions <- lm(bwt ~ bhead + blength + babysex+bhead * blength * babysex, data = birthweight). Results are same.
+summary(birthweight_model_3)|> 
+  broom::tidy()
+```
+
+```{r}
+birthweight_3 = birthweight |> 
+  add_predictions(birthweight_model_3) |>
+  add_residuals(birthweight_model_3)
+
+ggplot(birthweight_3, aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "loess", color = "blue", se = FALSE) +
+  labs(x = "Fitted values", y = "Residuals", title = "Residuals vs Fitted Values")
+```
+*The curvature in all three plots above suggests that there might be non-linearity in the data, meaning the model could be missing important non-linear relationships.*
+
+## Create the Monte Carlo cross-validation splits
+```{r}
+cv_splits_mc = crossv_mc(birthweight, 100) |> 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+
+cv_results_df = cv_splits_mc |> 
+  mutate(
+    # Model 1: Full model with many predictors
+    model_1 = map(train, \(x) lm(bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + malform + menarche + mheight + momage + mrace + parity + pnumlbw + pnumsga + ppbmi + ppwt + smoken + wtgain, data = x)),
+    
+    # Model 2: Simpler model with blength and gaweeks
+    model_2 = map(train, \(x) lm(bwt ~ blength + gaweeks, data = x)),
+    
+    # Model 3: Model with interactions between bhead, blength, and babysex
+    model_3 = map(train,  \(x) lm(bwt ~ bhead * blength * babysex, data = x))
+  ) |> 
+  mutate(
+    # Get RMSE for Model 1
+    rmse_1 = map2_dbl(model_1, test, ~ {
+      preds <- predict(.x, newdata = .y)  # Get predictions from model
+      rmse(.y$bwt, preds)  # Calculate RMSE with observed and predicted values
+    }),
+
+    # Get RMSE for Model 2
+    rmse_2 = map2_dbl(model_2, test, ~ {
+      preds <- predict(.x, newdata = .y)  # Get predictions from model
+      rmse(.y$bwt, preds)  # Calculate RMSE
+    }),
+
+    # Get RMSE for Model 3
+    rmse_3 = map2_dbl(model_3, test, ~ {
+      preds <- predict(.x, newdata = .y)  # Get predictions from model
+      rmse(.y$bwt, preds)  # Calculate RMSE
+    })
+  )
+
+# Compare RMSE of models
+cv_results_df |> 
+  summarise(
+    mean_model_1_rmse = mean(rmse_1),
+    mean_model_2_rmse = mean(rmse_2),
+    mean_model_3_rmse = mean(rmse_3)
+  )
+```
+*An RMSE of 273 in model_1 means the model’s predictions are off by 273 grams from the actual birthweights (bwt). Lower RMSE values indicate better model performance, so this model performs reasonably well.An RMSE of 333 in model_2 means that the model’s predictions are, on average, off by 333 grams. This model has a higher RMSE than Model 1, suggesting it performs worse in predicting birthweight, likely due to the fact that it uses fewer predictors. An RMSE of 289 indicates that this model's predictions are off by 289 grams. This model has a better performance than Model 2 but worse than Model 1.*
