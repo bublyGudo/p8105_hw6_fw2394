@@ -1,0 +1,32 @@
+---
+title: "p8105_hw6_fw2394"
+author: "Fang Wang"
+date: "2024-11-29"
+output: github_document
+---
+# Load libraries and setting up
+```{r, include = FALSE, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(broom)
+library(purrr) # for map
+library(modelr)
+library(rsample) # Load the rsample package for cross-validation
+library(Metrics)  # for rmse()
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp =.6,
+  out.width = "90%"
+)
+
+theme_set (theme_bw() + theme (
+    legend.position =  "bottom"
+  ))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+scale_color_discrete = scale_color_viridis_d()
+scale_fill_discrete = scale_fill_viridis_d()
+```
