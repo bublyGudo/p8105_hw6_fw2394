@@ -171,3 +171,79 @@ summarize(
     ci_upper = quantile(log(estimate_intercept*estimate_beta), 0.975))
 ```
 *95% confidence interval for log(β0_β1) is (1.97, 2.06).*
+
+
+# Problem 2
+
+## Load and clean data
+```{r}
+homicide = read.csv("./data/homicide-data.csv")|> 
+  mutate(city_state = paste(city, state, sep =",")) |> 
+  filter(!(city_state%in%c("Dallas,TX", "Phoenix,AZ", "Kansas City,MO", "Tulsa,AL"))) |> 
+  mutate(victim_age = as.numeric(victim_age)) |> 
+  filter (victim_race %in% c("White", "Black")) |> 
+  mutate(
+    solved = case_when(
+    disposition %in% c("Closed without arrest", "Closed by arrest") ~ 1, # Solved cases
+    disposition == "Open/No arrest" ~ 0,                                # Unsolved cases
+    TRUE ~ NA_integer_                                                  # Default (optional, NA if unexpected values)
+    )
+  )
+```
+*The dataset contains 39693 observations and 14 variables.*
+
+## run glm for Baltimore, MD
+```{r}
+# filter data for Baltimore,MD
+baltimore_df = homicide |> 
+  filter(city_state == "Baltimore,MD") |> 
+  mutate(victim_sex = as.factor (victim_sex),
+         victim_race = as.factor (victim_race))
+
+# run generalized linear models
+baltimore_model = glm(solved ~ victim_age + victim_sex + victim_race, family = binomial(), data = baltimore_df)
+
+## calculate the odds ratio in the model
+model_summary = tidy(baltimore_model, conf.int = TRUE, exponentiate = TRUE)
+model_summary
+```
+
+## Extract the odds ratio for male vs. female victims
+```{r}
+male_female_odds_ratio = model_summary|> 
+  filter(term == "victim_sexMale") |> 
+  select(estimate, conf.low, conf.high) |> 
+  janitor::clean_names()
+
+male_female_odds_ratio
+```
+*The estimate of victim_sexMale is 0.355 that indicates the odds of solving homicides for male victims are 64.5% lower than for female victims (1−0.355=0.645), holding all other factors constant. Its confidence Interval (0.267, 0.468) means the true odds are estimated to be between 0.267 and 0.468. p-value: 3.74×10^(−13), Highly statistically significant (p<0.001).*
+
+## run glm for each city
+```{r}
+homicide_cities = homicide|> 
+  group_by(city_state) |> 
+  nest() |>  # a nested list-column
+  mutate(
+    models = map(data, ~glm(solved ~ victim_age + victim_sex + victim_race, family = binomial(), data =.x)),
+    results = map (models, ~tidy(.x, conf.int = TRUE, exponentiate = TRUE))
+  ) |> 
+  select (city_state, results) |> 
+  unnest(results) |> 
+  filter(term == "victim_sexMale") |> 
+  select(city_state, term, estimate, conf.low, conf.high) |> 
+  janitor::clean_names()
+```
+*Homicide_cities contains 47 observations/cities and 5 variables, including state_city, term, estimate, conf_low and conf_high.*
+
+## plot ORs and Cls
+```{r}
+homicide_cities |> 
+  ggplot (aes(x = reorder(city_state, estimate), y = estimate)) +
+  geom_point() + 
+  geom_errorbar(aes(ymin = conf_low, ymax= conf_high)) + # Add confidence intervals
+  geom_hline(yintercept = 1, linetype = 'dashed', color = 'gray') + # Add a dashed line at odds ratio = 1
+  labs(x = 'City', y = 'Odds Ratio', title = 'Estimated Odds Ratios and Confidence Intervals for Each City')+  # Labels and title
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))  
+```
+*The plot provides a comparison of the odds ratios for different cities, allowing us to see which cities have a higher or lower likelihood of experiencing the event compared to the baseline. Cities like New York, NY and Long Beach, CA have odds ratios less than 1, which suggests that solving homicides is less likely in these cities compared to the reference group. However, cities like Fresno, CA and Minneapolis, MN have odds ratios greater than 1, meaning that the event is less likely in these cities compared to the reference group.*
